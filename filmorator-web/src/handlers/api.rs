@@ -9,6 +9,7 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::db;
+use crate::error::AppError;
 use crate::state::AppState;
 
 use super::session::{session_cookie_header, SessionId};
@@ -18,7 +19,7 @@ use filmorator_core::matchup::{
 use filmorator_core::models::{ComparisonResult, Matchup};
 use filmorator_core::ranking::BradleyTerry;
 
-const MATCHUP_SIZE: usize = 3;
+const MATCHUP_SIZE: u32 = 3;
 const RATING_ITERATIONS: u32 = 50;
 
 #[derive(Serialize)]
@@ -55,83 +56,57 @@ pub struct RankingEntry {
 pub async fn create_matchup(
     State(state): State<AppState>,
     session: SessionId,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, AppError> {
     let session_id = session.0;
 
-    let session_result = db::get_or_create_session(&state.db, session_id).await;
-    if let Err(e) = session_result {
-        tracing::error!("Failed to create session: {e}");
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
-    }
+    db::get_or_create_session(&state.db, session_id).await?;
 
-    let num_photos = match db::count_photos(&state.db).await {
-        Ok(n) => n,
-        Err(e) => {
-            tracing::error!("Failed to count photos: {e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
-        }
-    };
+    let num_photos = db::count_photos(&state.db).await?;
 
-    if num_photos < u32::try_from(MATCHUP_SIZE).unwrap_or(3) {
-        return (StatusCode::BAD_REQUEST, "Not enough photos").into_response();
+    if num_photos < MATCHUP_SIZE {
+        return Err(AppError::BadRequest("Not enough photos"));
     }
 
     // Check for pending seed matchup first
-    if let Ok(Some(pending)) = db::get_pending_seed_matchup(&state.db, session_id).await {
+    if let Some(pending) = db::get_pending_seed_matchup(&state.db, session_id).await? {
         let response = MatchupResponse {
             matchup_id: pending.id,
             photo_indices: pending.photo_indices,
         };
-        return (
-            [(header::SET_COOKIE, session_cookie_header(session_id))],
+        return Ok((
+            [(header::SET_COOKIE, session_cookie_header(session_id)?)],
             Json(response),
         )
-            .into_response();
+            .into_response());
     }
 
     // Generate seed matchups if none exist
-    if !db::has_seed_matchups(&state.db, session_id)
-        .await
-        .unwrap_or(false)
-    {
-        let seeds = generate_seed_matchups(num_photos, MATCHUP_SIZE);
+    let has_seeds = db::has_seed_matchups(&state.db, session_id).await?;
+    if !has_seeds {
+        let seeds = generate_seed_matchups(num_photos, MATCHUP_SIZE as usize);
         for indices in seeds {
             let matchup = Matchup::new(session_id, indices, true);
-            if let Err(e) = db::create_matchup(&state.db, &matchup).await {
-                tracing::error!("Failed to save seed matchup: {e}");
-            }
+            db::create_matchup(&state.db, &matchup).await?;
         }
 
         // Return first seed matchup
-        if let Ok(Some(first)) = db::get_pending_seed_matchup(&state.db, session_id).await {
+        if let Some(first) = db::get_pending_seed_matchup(&state.db, session_id).await? {
             let response = MatchupResponse {
                 matchup_id: first.id,
                 photo_indices: first.photo_indices,
             };
-            return (
-                [(header::SET_COOKIE, session_cookie_header(session_id))],
+            return Ok((
+                [(header::SET_COOKIE, session_cookie_header(session_id)?)],
                 Json(response),
             )
-                .into_response();
+                .into_response());
         }
     }
 
     // Seeds exhausted: generate dynamic matchup
-    let ratings = match db::get_session_ratings(&state.db, session_id).await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("Failed to get ratings: {e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
-        }
-    };
+    let ratings = db::get_session_ratings(&state.db, session_id).await?;
 
-    let comparisons = match db::get_session_comparisons(&state.db, session_id).await {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!("Failed to get comparisons: {e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
-        }
-    };
+    let comparisons = db::get_session_comparisons(&state.db, session_id).await?;
 
     let pairs: Vec<(u32, u32)> = comparisons
         .iter()
@@ -141,92 +116,66 @@ pub async fn create_matchup(
 
     let photo_indices = if ratings.is_empty() {
         // No ratings yet, pick first few photos
-        (0..u32::try_from(MATCHUP_SIZE).unwrap_or(3)).collect()
+        (0..MATCHUP_SIZE).collect()
     } else {
-        match select_dynamic_matchup(&ratings, &compared, MATCHUP_SIZE) {
+        match select_dynamic_matchup(&ratings, &compared, MATCHUP_SIZE as usize) {
             Some(indices) => indices,
             None => {
-                return (StatusCode::OK, "All pairs compared").into_response();
+                return Ok((StatusCode::OK, "All pairs compared").into_response());
             }
         }
     };
 
     let matchup = Matchup::new(session_id, photo_indices.clone(), false);
-    if let Err(e) = db::create_matchup(&state.db, &matchup).await {
-        tracing::error!("Failed to save matchup: {e}");
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
-    }
+    db::create_matchup(&state.db, &matchup).await?;
 
     let response = MatchupResponse {
         matchup_id: matchup.id,
         photo_indices,
     };
 
-    (
-        [(header::SET_COOKIE, session_cookie_header(session_id))],
+    Ok((
+        [(header::SET_COOKIE, session_cookie_header(session_id)?)],
         Json(response),
     )
-        .into_response()
+        .into_response())
 }
 
 pub async fn submit_comparison(
     State(state): State<AppState>,
     session: SessionId,
     Json(request): Json<CompareRequest>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, AppError> {
     let session_id = session.0;
 
     // Validate matchup exists and belongs to session
-    let matchup = match db::get_matchup(&state.db, request.matchup_id).await {
-        Ok(Some(m)) if m.session_id == session_id => m,
-        Ok(Some(_)) => {
-            return (
-                StatusCode::FORBIDDEN,
-                "Matchup belongs to different session",
-            )
-                .into_response()
+    let matchup = match db::get_matchup(&state.db, request.matchup_id).await? {
+        Some(m) if m.session_id == session_id => m,
+        Some(_) => {
+            return Err(AppError::Forbidden("Matchup belongs to different session"));
         }
-        Ok(None) => return (StatusCode::NOT_FOUND, "Matchup not found").into_response(),
-        Err(e) => {
-            tracing::error!("Failed to get matchup: {e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
-        }
+        None => return Err(AppError::NotFound("Matchup not found")),
     };
 
     // Validate ranked indices match matchup
     let matchup_set: HashSet<u32> = matchup.photo_indices.iter().copied().collect();
     let ranked_set: HashSet<u32> = request.ranked_photo_indices.iter().copied().collect();
     if matchup_set != ranked_set {
-        return (StatusCode::BAD_REQUEST, "Invalid ranking").into_response();
+        return Err(AppError::BadRequest("Invalid ranking"));
     }
 
     // Save comparison result
     let result =
         ComparisonResult::new(request.matchup_id, session_id, request.ranked_photo_indices);
-    if let Err(e) = db::save_comparison(&state.db, &result).await {
-        tracing::error!("Failed to save comparison: {e}");
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
-    }
+    db::save_comparison(&state.db, &result).await?;
 
     // Recompute ratings
-    let num_photos = match db::count_photos(&state.db).await {
-        Ok(n) => n,
-        Err(e) => {
-            tracing::error!("Failed to count photos: {e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
-        }
-    };
+    let num_photos = db::count_photos(&state.db).await?;
 
-    let comparisons = match db::get_session_comparisons(&state.db, session_id).await {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!("Failed to get comparisons: {e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
-        }
-    };
+    let comparisons = db::get_session_comparisons(&state.db, session_id).await?;
 
     let Some(mut bt) = BradleyTerry::new(num_photos as usize) else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Too many photos").into_response();
+        return Err(AppError::Internal("Too many photos"));
     };
 
     let pairs: Vec<(u32, u32)> = comparisons
@@ -236,53 +185,38 @@ pub async fn submit_comparison(
     bt.record_comparisons(&pairs);
 
     let ratings = bt.compute_ratings(RATING_ITERATIONS);
-    if let Err(e) = db::save_ratings(&state.db, session_id, &ratings).await {
-        tracing::error!("Failed to save ratings: {e}");
-    }
-
-    (StatusCode::OK, "Comparison recorded").into_response()
+    db::save_ratings(&state.db, session_id, &ratings).await?;
+    Ok((StatusCode::OK, "Comparison recorded").into_response())
 }
 
-pub async fn get_progress(State(state): State<AppState>, session: SessionId) -> impl IntoResponse {
+pub async fn get_progress(
+    State(state): State<AppState>,
+    session: SessionId,
+) -> Result<impl IntoResponse, AppError> {
     let session_id = session.0;
 
-    let num_photos = match db::count_photos(&state.db).await {
-        Ok(n) => n,
-        Err(e) => {
-            tracing::error!("Failed to count photos: {e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
-        }
-    };
+    let num_photos = db::count_photos(&state.db).await?;
 
-    let compared = match db::count_compared_pairs(&state.db, session_id).await {
-        Ok(n) => n,
-        Err(e) => {
-            tracing::error!("Failed to count pairs: {e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
-        }
-    };
+    let compared = db::count_compared_pairs(&state.db, session_id).await?;
 
     let total = filmorator_core::matchup::total_pairs_needed(num_photos);
     let percent = filmorator_core::matchup::completion_percent(compared, num_photos);
 
-    Json(ProgressResponse {
+    Ok(Json(ProgressResponse {
         compared_pairs: compared,
         total_pairs: total,
         percent,
     })
-    .into_response()
+    .into_response())
 }
 
-pub async fn get_ranking(State(state): State<AppState>, session: SessionId) -> impl IntoResponse {
+pub async fn get_ranking(
+    State(state): State<AppState>,
+    session: SessionId,
+) -> Result<impl IntoResponse, AppError> {
     let session_id = session.0;
 
-    let ratings = match db::get_session_ratings(&state.db, session_id).await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("Failed to get ratings: {e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
-        }
-    };
+    let ratings = db::get_session_ratings(&state.db, session_id).await?;
 
     let rankings: Vec<RankingEntry> = ratings
         .into_iter()
@@ -293,70 +227,49 @@ pub async fn get_ranking(State(state): State<AppState>, session: SessionId) -> i
         })
         .collect();
 
-    Json(RankingResponse { rankings }).into_response()
+    Ok(Json(RankingResponse { rankings }).into_response())
 }
 
 pub async fn get_image(
     State(state): State<AppState>,
     Path((tier, id)): Path<(String, String)>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, AppError> {
     use crate::s3::ImageTier;
     use std::time::Duration;
 
     let Some(tier) = ImageTier::from_str(&tier) else {
-        return (StatusCode::BAD_REQUEST, "Invalid tier").into_response();
+        return Err(AppError::BadRequest("Invalid tier"));
     };
 
     // Parse id as position (u32)
     let Ok(position) = id.parse::<u32>() else {
-        return (StatusCode::BAD_REQUEST, "Invalid photo id").into_response();
+        return Err(AppError::BadRequest("Invalid photo id"));
     };
 
     // Get filename from database
-    let filename = match db::get_photo_filename_by_position(&state.db, position).await {
-        Ok(Some(f)) => f,
-        Ok(None) => return (StatusCode::NOT_FOUND, "Photo not found").into_response(),
-        Err(e) => {
-            tracing::error!("Failed to get photo: {e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
-        }
+    let Some(filename) = db::get_photo_filename_by_position(&state.db, position).await? else {
+        return Err(AppError::NotFound("Photo not found"));
     };
 
     // Generate presigned URL (15 minute expiry)
-    let url = match state
+    let url = state
         .s3
         .presign_url(tier, &filename, Duration::from_secs(900))
-        .await
-    {
-        Ok(url) => url,
-        Err(e) => {
-            tracing::error!("Failed to generate presigned URL: {e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "S3 error").into_response();
-        }
-    };
+        .await?;
 
     // Redirect to presigned URL
-    (StatusCode::TEMPORARY_REDIRECT, [(header::LOCATION, url)]).into_response()
+    Ok((StatusCode::TEMPORARY_REDIRECT, [(header::LOCATION, url)]).into_response())
 }
 
-pub async fn sync_photos(State(state): State<AppState>) -> impl IntoResponse {
-    let filenames = match state.s3.list_photos().await {
-        Ok(f) => f,
-        Err(e) => {
-            tracing::error!("Failed to list photos from S3: {e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "S3 error").into_response();
-        }
-    };
+pub async fn sync_photos(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
+    let filenames = state.s3.list_photos().await?;
 
     let count = filenames.len();
 
     for (position, filename) in filenames.into_iter().enumerate() {
-        if let Err(e) =
-            db::upsert_photo(&state.db, &filename, u32::try_from(position).unwrap_or(0)).await
-        {
-            tracing::error!("Failed to upsert photo {filename}: {e}");
-        }
+        let pos = u32::try_from(position).map_err(|_| AppError::Internal("Position overflow"))?;
+        db::upsert_photo(&state.db, &filename, pos).await?;
     }
 
-    (StatusCode::OK, format!("Synced {count} photos")).into_response()
+    Ok((StatusCode::OK, format!("Synced {count} photos")).into_response())
 }

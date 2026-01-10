@@ -1,14 +1,10 @@
 use aws_sdk_s3::{presigning::PresigningConfig, Client};
 use std::time::Duration;
 
-/// Image size tiers for progressive loading.
 #[derive(Debug, Clone, Copy)]
 pub enum ImageTier {
-    /// Small thumbnail (~200px)
     Thumb,
-    /// Medium preview (~800px)
     Preview,
-    /// Full resolution original
     Original,
 }
 
@@ -33,7 +29,6 @@ impl ImageTier {
     }
 }
 
-/// S3 client wrapper for photo storage.
 #[derive(Clone)]
 pub struct S3Client {
     client: Client,
@@ -41,14 +36,12 @@ pub struct S3Client {
 }
 
 impl S3Client {
-    /// Creates a new S3 client from environment configuration.
     pub async fn from_env(bucket: String) -> Self {
         let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         let client = Client::new(&config);
         Self { client, bucket }
     }
 
-    /// Creates a new S3 client with custom endpoint (for MinIO/local dev).
     pub async fn with_endpoint(bucket: String, endpoint: &str) -> Self {
         let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         let s3_config = aws_sdk_s3::config::Builder::from(&config)
@@ -59,23 +52,14 @@ impl S3Client {
         Self { client, bucket }
     }
 
-    /// Generates a presigned URL for an image.
     pub async fn presign_url(
         &self,
         tier: ImageTier,
         filename: &str,
         expires_in: Duration,
-    ) -> Result<
-        String,
-        aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::get_object::GetObjectError>,
-    > {
+    ) -> anyhow::Result<String> {
         let key = format!("{}/{filename}", tier.as_prefix());
-
-        let presigning_config = PresigningConfig::builder()
-            .expires_in(expires_in)
-            .build()
-            .expect("valid presigning config");
-
+        let presigning_config = PresigningConfig::builder().expires_in(expires_in).build()?;
         let presigned = self
             .client
             .get_object()
@@ -83,11 +67,9 @@ impl S3Client {
             .key(&key)
             .presigned(presigning_config)
             .await?;
-
         Ok(presigned.uri().to_string())
     }
 
-    /// Lists all photos in the original tier.
     pub async fn list_photos(&self) -> Result<Vec<String>, anyhow::Error> {
         let mut filenames = Vec::new();
         let mut continuation_token: Option<String> = None;

@@ -4,6 +4,29 @@ use uuid::Uuid;
 
 use filmorator_core::models::{ComparisonResult, Matchup, PhotoRating, Session};
 
+fn i32_vec_to_u32_vec(v: Vec<i32>) -> sqlx::Result<Vec<u32>> {
+    v.into_iter()
+        .map(|i| u32::try_from(i).map_err(|_| sqlx::Error::Protocol("Negative index".into())))
+        .collect()
+}
+
+fn u32_vec_to_i32_vec(v: &[u32]) -> sqlx::Result<Vec<i32>> {
+    v.iter()
+        .map(|&i| i32::try_from(i).map_err(|_| sqlx::Error::Protocol("Index overflow".into())))
+        .collect()
+}
+
+fn matchup_from_row(row: sqlx::postgres::PgRow) -> sqlx::Result<Matchup> {
+    use sqlx::Row;
+    Ok(Matchup {
+        id: row.get("id"),
+        session_id: row.get("session_id"),
+        photo_indices: i32_vec_to_u32_vec(row.get("photo_indices"))?,
+        is_seed: row.get("is_seed"),
+        created_at: row.get("created_at"),
+    })
+}
+
 pub async fn get_or_create_session(pool: &PgPool, session_id: Uuid) -> sqlx::Result<Session> {
     let now = Utc::now();
 
@@ -33,15 +56,11 @@ pub async fn count_photos(pool: &PgPool) -> sqlx::Result<u32> {
         .await?;
 
     let count: i64 = row.get("count");
-    Ok(u32::try_from(count).unwrap_or(0))
+    u32::try_from(count).map_err(|_| sqlx::Error::Protocol("Count overflow".into()))
 }
 
 pub async fn create_matchup(pool: &PgPool, matchup: &Matchup) -> sqlx::Result<()> {
-    let indices: Vec<i32> = matchup
-        .photo_indices
-        .iter()
-        .filter_map(|&idx| i32::try_from(idx).ok())
-        .collect();
+    let indices = u32_vec_to_i32_vec(&matchup.photo_indices)?;
 
     sqlx::query(
         r"
@@ -72,26 +91,11 @@ pub async fn get_matchup(pool: &PgPool, matchup_id: Uuid) -> sqlx::Result<Option
     .fetch_optional(pool)
     .await?;
 
-    Ok(row.map(|r| Matchup {
-        id: r.get("id"),
-        session_id: r.get("session_id"),
-        photo_indices: r
-            .get::<Option<Vec<i32>>, _>("photo_indices")
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|i| u32::try_from(i).ok())
-            .collect(),
-        is_seed: r.get("is_seed"),
-        created_at: r.get("created_at"),
-    }))
+    row.map(matchup_from_row).transpose()
 }
 
 pub async fn save_comparison(pool: &PgPool, result: &ComparisonResult) -> sqlx::Result<()> {
-    let ranked: Vec<i32> = result
-        .ranked_photo_indices
-        .iter()
-        .filter_map(|&idx| i32::try_from(idx).ok())
-        .collect();
+    let ranked = u32_vec_to_i32_vec(&result.ranked_photo_indices)?;
 
     sqlx::query(
         r"
@@ -126,21 +130,17 @@ pub async fn get_session_comparisons(
     .fetch_all(pool)
     .await?;
 
-    Ok(rows
-        .into_iter()
-        .map(|r| ComparisonResult {
-            id: r.get("id"),
-            matchup_id: r.get("matchup_id"),
-            session_id: r.get("session_id"),
-            ranked_photo_indices: r
-                .get::<Option<Vec<i32>>, _>("ranked_photo_indices")
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|i| u32::try_from(i).ok())
-                .collect(),
-            created_at: r.get("created_at"),
+    rows.into_iter()
+        .map(|r| {
+            Ok(ComparisonResult {
+                id: r.get("id"),
+                matchup_id: r.get("matchup_id"),
+                session_id: r.get("session_id"),
+                ranked_photo_indices: i32_vec_to_u32_vec(r.get("ranked_photo_indices"))?,
+                created_at: r.get("created_at"),
+            })
         })
-        .collect())
+        .collect()
 }
 
 pub async fn get_session_ratings(
@@ -159,16 +159,16 @@ pub async fn get_session_ratings(
     .fetch_all(pool)
     .await?;
 
-    Ok(rows
-        .into_iter()
-        .filter_map(|r| {
-            Some(PhotoRating {
-                photo_idx: u32::try_from(r.get::<i32, _>("photo_idx")).ok()?,
+    rows.into_iter()
+        .map(|r| {
+            Ok(PhotoRating {
+                photo_idx: u32::try_from(r.get::<i32, _>("photo_idx"))
+                    .map_err(|_| sqlx::Error::Protocol("Negative photo_idx".into()))?,
                 strength: r.get("strength"),
                 uncertainty: r.get("uncertainty"),
             })
         })
-        .collect())
+        .collect()
 }
 
 pub async fn save_ratings(
@@ -177,7 +177,8 @@ pub async fn save_ratings(
     ratings: &[PhotoRating],
 ) -> sqlx::Result<()> {
     for rating in ratings {
-        let photo_idx = i32::try_from(rating.photo_idx).unwrap_or(0);
+        let photo_idx = i32::try_from(rating.photo_idx)
+            .map_err(|_| sqlx::Error::Protocol("Index overflow".into()))?;
         sqlx::query(
             r"
             INSERT INTO photo_ratings (session_id, photo_idx, strength, uncertainty)
@@ -203,7 +204,7 @@ pub async fn count_compared_pairs(pool: &PgPool, session_id: Uuid) -> sqlx::Resu
         .flat_map(ComparisonResult::to_pairwise)
         .map(|(a, b)| filmorator_core::matchup::normalize_pair(a, b))
         .collect();
-    Ok(u64::try_from(pairs.len()).unwrap_or(0))
+    Ok(pairs.len() as u64)
 }
 
 pub async fn get_pending_seed_matchup(
@@ -224,18 +225,7 @@ pub async fn get_pending_seed_matchup(
     .fetch_optional(pool)
     .await?;
 
-    Ok(row.map(|r| Matchup {
-        id: r.get("id"),
-        session_id: r.get("session_id"),
-        photo_indices: r
-            .get::<Option<Vec<i32>>, _>("photo_indices")
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|i| u32::try_from(i).ok())
-            .collect(),
-        is_seed: r.get("is_seed"),
-        created_at: r.get("created_at"),
-    }))
+    row.map(matchup_from_row).transpose()
 }
 
 pub async fn has_seed_matchups(pool: &PgPool, session_id: Uuid) -> sqlx::Result<bool> {
@@ -251,14 +241,13 @@ pub async fn has_seed_matchups(pool: &PgPool, session_id: Uuid) -> sqlx::Result<
 
 pub async fn upsert_photo(pool: &PgPool, filename: &str, position: u32) -> sqlx::Result<()> {
     let id = Uuid::new_v4();
-    let position_i32 = i32::try_from(position).unwrap_or(0);
+    let position_i32 =
+        i32::try_from(position).map_err(|_| sqlx::Error::Protocol("Position overflow".into()))?;
 
     sqlx::query(
-        r"
-        INSERT INTO photos (id, filename, width, height, file_hash, position)
-        VALUES ($1, $2, 0, 0, $2, $3)
-        ON CONFLICT (file_hash) DO UPDATE SET position = $3
-        ",
+        r"INSERT INTO photos (id, filename, file_hash, position)
+          VALUES ($1, $2, $2, $3)
+          ON CONFLICT (file_hash) DO UPDATE SET position = $3",
     )
     .bind(id)
     .bind(filename)
@@ -273,7 +262,8 @@ pub async fn get_photo_filename_by_position(
     pool: &PgPool,
     position: u32,
 ) -> sqlx::Result<Option<String>> {
-    let position_i32 = i32::try_from(position).unwrap_or(0);
+    let position_i32 =
+        i32::try_from(position).map_err(|_| sqlx::Error::Protocol("Position overflow".into()))?;
 
     let row = sqlx::query("SELECT filename FROM photos WHERE position = $1")
         .bind(position_i32)

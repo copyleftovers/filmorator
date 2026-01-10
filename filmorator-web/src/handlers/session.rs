@@ -5,6 +5,7 @@ use axum::{
 };
 use uuid::Uuid;
 
+use crate::error::AppError;
 use crate::state::AppState;
 
 const SESSION_COOKIE: &str = "session_id";
@@ -45,8 +46,8 @@ fn parse_session_cookie(cookies: &str) -> Option<Uuid> {
 }
 
 /// Creates a Set-Cookie header value for the session.
-pub fn session_cookie_header(session_id: Uuid) -> HeaderValue {
+pub fn session_cookie_header(session_id: Uuid) -> Result<HeaderValue, AppError> {
     let cookie =
         format!("{SESSION_COOKIE}={session_id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000");
-    HeaderValue::from_str(&cookie).unwrap_or_else(|_| HeaderValue::from_static(""))
+    HeaderValue::from_str(&cookie).map_err(|_| AppError::Internal("Invalid cookie"))
 }

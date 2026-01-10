@@ -4,8 +4,6 @@ use std::hash::BuildHasher;
 
 use crate::models::PhotoRating;
 
-/// Generates initial seed matchups using balanced shuffle-and-group.
-/// Produces O(n log n) matchups with good pair coverage.
 #[must_use]
 pub fn generate_seed_matchups(num_photos: u32, matchup_size: usize) -> Vec<Vec<u32>> {
     let Some(size_u32) = u32::try_from(matchup_size).ok() else {
@@ -35,8 +33,6 @@ pub fn generate_seed_matchups(num_photos: u32, matchup_size: usize) -> Vec<Vec<u
     matchups
 }
 
-/// Selects the next dynamic matchup based on current ratings.
-/// Prioritizes items with high uncertainty or close ratings.
 #[must_use]
 pub fn select_dynamic_matchup<S: BuildHasher>(
     ratings: &[PhotoRating],
@@ -101,14 +97,6 @@ pub const fn total_pairs_needed(num_photos: u32) -> u64 {
     n * (n - 1) / 2
 }
 
-/// Returns completion as (numerator, denominator) to avoid float precision issues.
-#[must_use]
-pub const fn completion_fraction(compared_pairs: u64, num_photos: u32) -> (u64, u64) {
-    let total = total_pairs_needed(num_photos);
-    (compared_pairs, total)
-}
-
-/// Returns completion percentage as integer (0-100).
 #[must_use]
 pub fn completion_percent(compared_pairs: u64, num_photos: u32) -> u8 {
     let total = total_pairs_needed(num_photos);

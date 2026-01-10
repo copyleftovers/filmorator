@@ -2,20 +2,14 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// A photo in the collection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Photo {
     pub id: Uuid,
     pub filename: String,
-    pub width: u32,
-    pub height: u32,
     pub file_hash: String,
-    /// Position in the ordered collection (0-indexed).
     pub position: u32,
-    pub created_at: DateTime<Utc>,
 }
 
-/// An anonymous user session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: Uuid,
@@ -41,14 +35,11 @@ impl Default for Session {
     }
 }
 
-/// A matchup: group of photos shown together for ranking.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Matchup {
     pub id: Uuid,
     pub session_id: Uuid,
-    /// Indices into the photo collection.
     pub photo_indices: Vec<u32>,
-    /// Whether this matchup was generated from snic seed.
     pub is_seed: bool,
     pub created_at: DateTime<Utc>,
 }
@@ -66,14 +57,11 @@ impl Matchup {
     }
 }
 
-/// User's ranking result for a matchup.
-/// Stores the ordered result from best to worst.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComparisonResult {
     pub id: Uuid,
     pub matchup_id: Uuid,
     pub session_id: Uuid,
-    /// Ordered from best (first) to worst (last).
     pub ranked_photo_indices: Vec<u32>,
     pub created_at: DateTime<Utc>,
 }
@@ -90,8 +78,6 @@ impl ComparisonResult {
         }
     }
 
-    /// Expand this ranking into pairwise comparisons.
-    /// Returns (`winner_idx`, `loser_idx`) pairs.
     #[must_use]
     pub fn to_pairwise(&self) -> Vec<(u32, u32)> {
         let mut pairs = Vec::new();
@@ -104,13 +90,10 @@ impl ComparisonResult {
     }
 }
 
-/// Bradley-Terry rating for a photo within a session.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct PhotoRating {
     pub photo_idx: u32,
-    /// Log-strength parameter (higher = better).
     pub strength: f64,
-    /// Uncertainty estimate (standard error).
     pub uncertainty: f64,
 }
 
@@ -119,19 +102,10 @@ impl PhotoRating {
     pub fn new(photo_idx: u32) -> Self {
         Self {
             photo_idx,
-            strength: 0.0,    // Start at neutral
-            uncertainty: 1.0, // High initial uncertainty
+            strength: 0.0,
+            uncertainty: 1.0,
         }
     }
-}
-
-/// Computed ranking for a session.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionRanking {
-    pub session_id: Uuid,
-    /// Ratings ordered by strength (best first).
-    pub ratings: Vec<PhotoRating>,
-    pub computed_at: DateTime<Utc>,
 }
 
 #[cfg(test)]
