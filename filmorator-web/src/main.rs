@@ -35,7 +35,15 @@ async fn main() -> anyhow::Result<()> {
     let s3 = match &config.s3_endpoint {
         Some(endpoint) => {
             tracing::info!("Using custom S3 endpoint: {endpoint}");
-            S3Client::with_endpoint(config.bucket.clone(), endpoint).await
+            if let Some(public) = &config.s3_public_url {
+                tracing::info!("Public S3 URL for presigning: {public}");
+            }
+            S3Client::with_endpoint(
+                config.bucket.clone(),
+                endpoint,
+                config.s3_public_url.as_deref(),
+            )
+            .await
         }
         None => S3Client::from_env(config.bucket.clone()).await,
     };
@@ -50,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/ranking", get(handlers::api::get_ranking))
         .route("/api/progress", get(handlers::api::get_progress))
         .route("/api/sync", post(handlers::api::sync_photos))
-        .route("/img/{tier}/{id}", get(handlers::api::get_image))
+        .route("/img/:tier/:id", get(handlers::api::get_image))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(AppState::new(db, s3));

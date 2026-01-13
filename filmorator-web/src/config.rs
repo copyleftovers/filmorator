@@ -6,6 +6,7 @@ pub struct Config {
     pub database_url: String,
     pub bucket: String,
     pub s3_endpoint: Option<String>,
+    pub s3_public_url: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -33,6 +34,7 @@ impl Config {
                 .map_err(|_| ConfigError::MissingDatabaseUrl)?,
             bucket: std::env::var("FILMORATOR_BUCKET").map_err(|_| ConfigError::MissingBucket)?,
             s3_endpoint: std::env::var("AWS_ENDPOINT_URL").ok(),
+            s3_public_url: std::env::var("S3_PUBLIC_URL").ok(),
         })
     }
 }

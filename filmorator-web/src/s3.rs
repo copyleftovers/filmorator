@@ -31,7 +31,8 @@ impl ImageTier {
 
 #[derive(Clone)]
 pub struct S3Client {
-    client: Client,
+    internal_client: Client,
+    presign_client: Client,
     bucket: String,
 }
 
@@ -39,17 +40,34 @@ impl S3Client {
     pub async fn from_env(bucket: String) -> Self {
         let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         let client = Client::new(&config);
-        Self { client, bucket }
+        Self {
+            internal_client: client.clone(),
+            presign_client: client,
+            bucket,
+        }
     }
 
-    pub async fn with_endpoint(bucket: String, endpoint: &str) -> Self {
+    pub async fn with_endpoint(bucket: String, endpoint: &str, public_url: Option<&str>) -> Self {
         let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-        let s3_config = aws_sdk_s3::config::Builder::from(&config)
+
+        let internal_config = aws_sdk_s3::config::Builder::from(&config)
             .endpoint_url(endpoint)
             .force_path_style(true)
             .build();
-        let client = Client::from_conf(s3_config);
-        Self { client, bucket }
+        let internal_client = Client::from_conf(internal_config);
+
+        let presign_endpoint = public_url.unwrap_or(endpoint);
+        let presign_config = aws_sdk_s3::config::Builder::from(&config)
+            .endpoint_url(presign_endpoint)
+            .force_path_style(true)
+            .build();
+        let presign_client = Client::from_conf(presign_config);
+
+        Self {
+            internal_client,
+            presign_client,
+            bucket,
+        }
     }
 
     pub async fn presign_url(
@@ -61,7 +79,7 @@ impl S3Client {
         let key = format!("{}/{filename}", tier.as_prefix());
         let presigning_config = PresigningConfig::builder().expires_in(expires_in).build()?;
         let presigned = self
-            .client
+            .presign_client
             .get_object()
             .bucket(&self.bucket)
             .key(&key)
@@ -76,7 +94,7 @@ impl S3Client {
 
         loop {
             let mut request = self
-                .client
+                .internal_client
                 .list_objects_v2()
                 .bucket(&self.bucket)
                 .prefix("original/");
