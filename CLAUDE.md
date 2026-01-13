@@ -31,6 +31,7 @@ Reference architecture: `~/pp/gallery-rs` (CLI writes S3, webapp reads).
 - **API uses position (int), not id (UUID)**: `/img/thumb/42` is photo at position 42
 - **No image processing**: Upload identical files to `original/`, `preview/`, `thumb/` externally
 - **Don't add string HTML templates**: Target is Leptos. Current templates are technical debt, not a pattern to extend.
+- **Leptos documentation**: Use the Leptos MCP server tools (`mcp__plugin_leptos-mcp_leptos__*`) for framework documentation and code analysis.
 
 ## Debugging
 
