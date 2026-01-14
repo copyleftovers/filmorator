@@ -135,6 +135,10 @@ Core flow + full engagement system:
 | Threshold notification | Poll-based. Owner checks management URL. No email/webhook. |
 | Abuse detection | Speed-based + pattern-based + manual owner flagging |
 | Campaign deletion | Not supported. Campaigns persist forever. Close/reopen only. |
+| Matchup size | Fixed at 3 photos. Not configurable. 2 is boring, 4+ is cognitively taxing. |
+| Owner access | Secret management URL (`/{id}/manage/{secret}`). Capability-based, sessionless. |
+| Owner session | None. Management URL IS the capability. Owner can also participate separately. |
+| Personal vs aggregate | Derived on-demand from participant's comparisons. No separate storage. |
 
 ---
 
@@ -148,13 +152,16 @@ Core flow + full engagement system:
 
 ---
 
-## Relationship to VISION.md
+## Relationship to ARCHITECTURE_PLAN.md
 
-| This Document (WHAT) | VISION.md (HOW) |
-|----------------------|-----------------|
-| Immutable campaigns | S3 manifest pattern |
+| This Document (WHAT) | ARCHITECTURE_PLAN.md (HOW) |
+|----------------------|----------------------------|
+| Immutable campaigns | S3 manifest immutable, status in DB |
 | Session-based participants | Cookie + DB sessions table |
-| Statistical unlock threshold | Bradley-Terry confidence interval |
-| Optional names | Session metadata column |
+| Statistical unlock threshold | Bradley-Terry confidence + snic coverage |
+| Optional names | Session `name` column (nullable) |
 | JPEG only | CLI validation step |
 | Fail loudly | No retry middleware |
+| Secret management URL | `/{id}/manage/{secret}` route |
+| Fixed 3-photo matchups | Hardcoded in snic call |
+| Personal vs aggregate | Derived on-demand query |
