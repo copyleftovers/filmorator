@@ -27,7 +27,10 @@ One of the workflows where this pattern lends itself beautifully is objective fa
 - `filmorator-cli/` — Does not exist yet. Will create campaigns.
 
 **Key documents**:
-- `VISION.md` — The specification. This is what we're building.
+- `VISION.md` — Technical architecture. HOW we're building it.
+- `spec/product-spec.md` — Product decisions. WHAT we're building.
+- `spec/personas.md` — User personas (Olena, Marcus, Daria).
+- `spec/user-stories.md` — User stories with AC.
 - `_legacy/README.md` — What the PoC proved works/doesn't work.
 - `.claude/synthesis-leptos-migration.md` — Technical decisions for Leptos migration.
 
@@ -66,10 +69,18 @@ Do NOT replicate:
 
 See `_legacy/README.md` for detailed guidance.
 
+## Project Skills
+
+| Skill | Purpose |
+|-------|---------|
+| `filmorator-debug` | End-to-end debugging for webapp stack |
+| `user-story-chef` | Write stories as value negotiation units |
+| `spec-chef` | Extract product decisions from stakeholders |
+
+All skills in `.claude/skills/`.
+
 ## Debugging
 
-Project-specific skill: `.claude/skills/filmorator-debug/`
-
-Note: Debug skill references PoC routes and patterns. Will need updating after Leptos implementation.
+Skill: `filmorator-debug` — references PoC routes, will need updating after Leptos implementation.
 
 Chrome MCP network/console tracking is lazy-start—call the tool BEFORE the action you want to capture.
