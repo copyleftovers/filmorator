@@ -41,17 +41,19 @@ services:
       echo 'Bucket ready';
       "
 
+  # Webapp service (Increment 2+)
+  # For local dev, use: cargo leptos watch
   # app:
-  #   Leptos webapp - to be configured after implementation
-  #   See _legacy/Dockerfile for reference patterns
-  #   build: .
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
   #   depends_on:
   #     db:
   #       condition: service_healthy
   #     minio-setup:
   #       condition: service_completed_successfully
   #   environment:
-  #     PORT: "3000"
+  #     LEPTOS_SITE_ADDR: "0.0.0.0:3000"
   #     DATABASE_URL: postgres://filmorator:filmorator@db:5432/filmorator
   #     FILMORATOR_BUCKET: filmorator
   #     AWS_ENDPOINT_URL: http://minio:9000
@@ -59,6 +61,6 @@ services:
   #     AWS_ACCESS_KEY_ID: minioadmin
   #     AWS_SECRET_ACCESS_KEY: minioadmin
   #     AWS_REGION: us-east-1
-  #     RUST_LOG: filmorator_web=debug
+  #     RUST_LOG: filmorator_web=debug,info
   #   ports:
   #     - "3000:3000"

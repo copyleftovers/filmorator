@@ -1,0 +1,34 @@
+# bacon configuration for Leptos projects
+# Note: Use for linting only, NOT for cargo-leptos watch
+
+default_job = "clippy-ssr"
+
+[jobs.clippy-ssr]
+command = ["cargo", "clippy", "-p", "filmorator-web", "--features", "ssr", "--color", "always", "--", "-D", "warnings"]
+need_stdout = false
+
+[jobs.clippy-hydrate]
+command = ["cargo", "clippy", "-p", "filmorator-web", "--target", "wasm32-unknown-unknown", "--features", "hydrate", "--color", "always", "--", "-D", "warnings"]
+need_stdout = false
+
+[jobs.clippy-core]
+command = ["cargo", "clippy", "-p", "filmorator-core", "--color", "always", "--", "-D", "warnings"]
+need_stdout = false
+
+[jobs.check-ssr]
+command = ["cargo", "check", "-p", "filmorator-web", "--features", "ssr", "--color", "always"]
+need_stdout = false
+
+[jobs.check-hydrate]
+command = ["cargo", "check", "-p", "filmorator-web", "--target", "wasm32-unknown-unknown", "--features", "hydrate", "--color", "always"]
+need_stdout = false
+
+[jobs.test]
+command = ["cargo", "test", "-p", "filmorator-core", "--color", "always"]
+need_stdout = true
+
+[keybindings]
+s = "job:clippy-ssr"
+h = "job:clippy-hydrate"
+c = "job:clippy-core"
+t = "job:test"
