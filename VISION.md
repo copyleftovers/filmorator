@@ -20,6 +20,7 @@ Crowdsource photo rankings. Multiple anonymous participants contribute pairwise 
 | `spec/personas.md` | User model | WHO are we building for? |
 | `spec/user-stories.md` | Requirements | WHAT must it do? |
 | `spec/ARCHITECTURE_PLAN.md` | Technical architecture | HOW do we build it? |
+| `spec/IMPLEMENTATION_PLAN.md` | Incremental delivery | WHEN can stakeholders test? |
 
 ---
 

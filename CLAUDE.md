@@ -18,7 +18,7 @@ One of the workflows where this pattern lends itself beautifully is objective fa
 
 ## Project State
 
-**Phase**: Post-PoC, pre-implementation. The PoC taught lessons, Vision was extracted, reimplementation pending.
+**Phase**: Implementation-ready. PoC lessons extracted, Vision documented, incremental plan approved.
 
 **Codebase layout**:
 - `filmorator-core/` — Active. Algorithm and types (architecture-agnostic).
@@ -27,10 +27,12 @@ One of the workflows where this pattern lends itself beautifully is objective fa
 - `filmorator-cli/` — Does not exist yet. Will create campaigns.
 
 **Key documents**:
-- `VISION.md` — Technical architecture. HOW we're building it.
+- `VISION.md` — Overview pointer to spec/ structure.
 - `spec/product-spec.md` — Product decisions. WHAT we're building.
 - `spec/personas.md` — User personas (Olena, Marcus, Daria).
 - `spec/user-stories.md` — User stories with AC.
+- `spec/ARCHITECTURE_PLAN.md` — Technical architecture. HOW we're building it.
+- `spec/IMPLEMENTATION_PLAN.md` — Incremental delivery. WHEN stakeholders can test.
 - `_legacy/README.md` — What the PoC proved works/doesn't work.
 - `.claude/synthesis-leptos-migration.md` — Technical decisions for Leptos migration.
 
