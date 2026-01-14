@@ -1,5 +1,5 @@
 [workspace]
-members = ["filmorator-core", "filmorator-web"]
+members = ["filmorator-core"]
 resolver = "2"
 
 [workspace.package]

@@ -1,53 +1,65 @@
 default:
     @just --list
 
-# Run development server
-dev:
-    cargo run --bin filmorator-web
+# === Infrastructure ===
 
-# Build release binary
-build:
-    cargo build --release
+# Start dev infrastructure (db + minio)
+infra:
+    docker compose up -d db minio minio-setup
 
-# Run all tests
+# Stop dev infrastructure
+infra-down:
+    docker compose down
+
+# === Core Library ===
+
+# Run tests on filmorator-core
 test:
-    cargo test --all-features
+    cargo test -p filmorator-core
 
-# Run clippy with pedantic warnings
+# Clippy on filmorator-core
 clippy:
-    cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic
+    cargo clippy -p filmorator-core -- -D warnings -W clippy::pedantic
 
 # Format all code
 fmt:
     cargo fmt --all
 
+# Check formatting
+fmt-check:
+    cargo fmt --all -- --check
+
 # Run all checks (format, clippy, test)
-check: fmt clippy test
+check: fmt-check clippy test
+
+# === Database ===
+
+# Run migrations (requires DATABASE_URL or running db container)
+migrate-run:
+    cargo sqlx migrate run
+
+# Create new migration
+migrate-new name:
+    cargo sqlx migrate add {{name}}
 
 # Generate sqlx offline data for CI
 prepare-offline:
     cargo sqlx prepare --workspace
 
-# Build Docker image
-docker-build:
-    docker build -t filmorator .
+# === Legacy Reference ===
 
-# Initialize cargo-dist (run once for initial setup)
-dist-init:
-    cargo dist init
+# Build legacy PoC (for reference only)
+legacy-build:
+    cd _legacy/filmorator-web && cargo build
 
-# Run local CI simulation
-ci-check: fmt
-    cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic
-    cargo build
-    cargo test
+# Run legacy PoC (for reference only)
+legacy-run:
+    cd _legacy/filmorator-web && cargo run
 
-# Database migrations (requires DATABASE_URL)
-migrate-run:
-    cargo sqlx migrate run
+# === Future (Leptos webapp) ===
 
-migrate-new name:
-    cargo sqlx migrate add {{name}}
+# dev:
+#     cargo leptos watch
 
-migrate-revert:
-    cargo sqlx migrate revert
+# build:
+#     cargo leptos build --release

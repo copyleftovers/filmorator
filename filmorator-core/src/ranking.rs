@@ -1,7 +1,53 @@
 use crate::models::PhotoRating;
 
 /// Bradley-Terry model for pairwise comparison ranking.
-/// Uses MM algorithm for maximum likelihood estimation.
+///
+/// # Mathematical Background
+///
+/// Each item i has a latent strength parameter θᵢ > 0. The probability that
+/// item i beats item j in a pairwise comparison is:
+///
+/// ```text
+/// P(i beats j) = θᵢ / (θᵢ + θⱼ)
+/// ```
+///
+/// Equivalently, using log-strengths (what we store):
+///
+/// ```text
+/// P(i beats j) = 1 / (1 + exp(-(log θᵢ - log θⱼ)))
+/// ```
+///
+/// This is equivalent to logistic regression on pairwise outcomes.
+///
+/// # MM Algorithm
+///
+/// We use the Minorization-Maximization algorithm for maximum likelihood
+/// estimation. The update rule is:
+///
+/// ```text
+/// θᵢ_new = wins_i / Σⱼ (n_ij / (θᵢ + θⱼ))
+/// ```
+///
+/// where:
+/// - `wins_i` = total wins for item i across all comparisons
+/// - `n_ij` = number of comparisons between items i and j
+///
+/// After each iteration, strengths are normalized to sum to N (number of items).
+/// Convergence is typically fast (50 iterations sufficient for most cases).
+///
+/// # Multi-way Comparisons
+///
+/// A 3-way ranking (A > B > C) expands to 3 pairwise outcomes:
+/// - A beats B
+/// - A beats C
+/// - B beats C
+///
+/// See [`crate::models::ComparisonResult::to_pairwise`] for the expansion.
+///
+/// # References
+///
+/// - Bradley, R. A., & Terry, M. E. (1952). "Rank Analysis of Incomplete Block Designs"
+/// - Hunter, D. R. (2004). "MM algorithms for generalized Bradley-Terry models"
 pub struct BradleyTerry {
     num_items: u32,
     wins: Vec<Vec<u32>>,
@@ -119,6 +165,12 @@ impl BradleyTerry {
     }
 }
 
+/// Computes P(i beats j) given log-strength parameters.
+///
+/// Uses the Bradley-Terry formula: `1 / (1 + exp(-(sᵢ - sⱼ)))`
+/// where sᵢ and sⱼ are log-strengths (as stored in [`PhotoRating::strength`]).
+///
+/// Returns 0.5 when strengths are equal, approaches 1.0 as i's advantage grows.
 #[must_use]
 pub fn win_probability(strength_i: f64, strength_j: f64) -> f64 {
     1.0 / (1.0 + (-(strength_i - strength_j)).exp())
