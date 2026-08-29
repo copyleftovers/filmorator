@@ -11,23 +11,50 @@ infra:
 infra-down:
     docker compose down
 
+# === Leptos Webapp ===
+
+# Development server with hot reload
+dev:
+    cargo leptos watch
+
+# Build release binary + WASM
+build:
+    cargo leptos build --release
+
 # === Core Library ===
 
 # Run tests on filmorator-core
 test:
     cargo test -p filmorator-core
 
+# === Linting ===
+
 # Clippy on filmorator-core
-clippy:
+clippy-core:
     cargo clippy -p filmorator-core -- -D warnings -W clippy::pedantic
 
-# Format all code
+# Clippy on filmorator-web (SSR)
+clippy-ssr:
+    cargo clippy -p filmorator-web --features ssr -- -D warnings
+
+# Clippy on filmorator-web (hydrate/WASM)
+clippy-hydrate:
+    cargo clippy -p filmorator-web --target wasm32-unknown-unknown --features hydrate -- -D warnings
+
+# Clippy all targets
+clippy: clippy-core clippy-ssr clippy-hydrate
+
+# === Formatting ===
+
+# Format all code (rustfmt + leptosfmt)
 fmt:
     cargo fmt --all
+    leptosfmt filmorator-web/src
 
 # Check formatting
 fmt-check:
     cargo fmt --all -- --check
+    leptosfmt --check filmorator-web/src
 
 # Run all checks (format, clippy, test)
 check: fmt-check clippy test
@@ -46,6 +73,18 @@ migrate-new name:
 prepare-offline:
     cargo sqlx prepare --workspace
 
+# === Docker ===
+
+# Build Docker image for webapp
+docker-build:
+    docker build -t filmorator .
+
+# === CI ===
+
+# Local CI simulation
+ci-check: fmt-check clippy test
+    cargo leptos build --release
+
 # === Legacy Reference ===
 
 # Build legacy PoC (for reference only)
@@ -55,11 +94,3 @@ legacy-build:
 # Run legacy PoC (for reference only)
 legacy-run:
     cd _legacy/filmorator-web && cargo run
-
-# === Future (Leptos webapp) ===
-
-# dev:
-#     cargo leptos watch
-
-# build:
-#     cargo leptos build --release

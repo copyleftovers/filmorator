@@ -4,8 +4,20 @@ repos:
       hooks:
           - id: fmt
           - id: cargo-check
+            args: [-p, filmorator-core]
           - id: clippy
-            args: [--fix, --allow-staged, --, -W, "clippy::pedantic"]
+            args: [--fix, --allow-staged, -p, filmorator-core, --, -W, "clippy::pedantic"]
+
+    - repo: local
+      hooks:
+          - id: leptosfmt
+            name: leptosfmt
+            description: Format Leptos view! macros
+            entry: leptosfmt --check "filmorator-web/src/**/*.rs"
+            language: system
+            pass_filenames: false
+            always_run: true
+
     - repo: https://github.com/pre-commit/pre-commit-hooks
       rev: v4.6.0
       hooks:

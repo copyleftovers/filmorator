@@ -20,21 +20,44 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout code
-              uses: actions/checkout@v5
+              uses: actions/checkout@v4
+
             - name: Setup Rust
               uses: dtolnay/rust-toolchain@stable
               with:
+                  targets: wasm32-unknown-unknown
                   components: clippy, rustfmt
+
+            - name: Install cargo-leptos
+              uses: taiki-e/install-action@v2
+              with:
+                  tool: cargo-leptos
+
             - name: Cache dependencies
               uses: Swatinem/rust-cache@v2
-            - name: Check formatting
+
+            - name: Check formatting (rustfmt)
               run: cargo fmt --all -- --check
-            - name: Clippy (pedantic)
-              run: cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic
-            - name: Build
-              run: cargo build
+
+            - name: Check formatting (leptosfmt)
+              uses: LesnyRumcajs/leptosfmt-action@main
+              with:
+                  args: --check filmorator-web/src
+
+            - name: Clippy (filmorator-core)
+              run: cargo clippy -p filmorator-core -- -D warnings -W clippy::pedantic
+
+            - name: Clippy (filmorator-web SSR)
+              run: cargo clippy -p filmorator-web --features ssr -- -D warnings
+
+            - name: Clippy (filmorator-web hydrate)
+              run: cargo clippy -p filmorator-web --target wasm32-unknown-unknown --features hydrate -- -D warnings
+
+            - name: Build (cargo-leptos)
+              run: cargo leptos build --release
+
             - name: Run tests
-              run: cargo test
+              run: cargo test -p filmorator-core
 
     create-release-pr:
         name: Create Release PR
@@ -52,12 +75,14 @@ jobs:
             cancel-in-progress: false
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v5
+              uses: actions/checkout@v4
               with:
                   fetch-depth: 0
                   persist-credentials: false
+
             - name: Install Rust toolchain
               uses: dtolnay/rust-toolchain@stable
+
             - name: Create or update release PR
               uses: release-plz/action@v0.5
               with:
